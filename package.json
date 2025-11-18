@@ -1,0 +1,30 @@
+{
+  "name": "playwright-poc-gen-ui",
+  "version": "1.0.0",
+  "description": "AI-powered journey generation for playwright-poc",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "generate": "node src/generate-journey.js",
+    "validate": "node src/validate-journeys.js",
+    "install-deps": "npm install",
+    "test": "npm run validate"
+  },
+  "dependencies": {
+    "openai": "^4.67.3",
+    "inquirer": "^10.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:JoniBach/playwright-poc-gen-ui.git"
+  },
+  "keywords": ["ai", "journey-generation", "govuk", "zod", "openai"],
+  "author": "JoniBach",
+  "license": "MIT"
+}
