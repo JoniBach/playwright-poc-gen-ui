@@ -45,19 +45,144 @@ async function generateJourney(prompt: string) {
                 {
                     role: 'system',
                     content: `You are a GOV.UK journey designer. Create user journeys following GOV.UK design patterns.
-                    
-Each journey should have:
-- A unique ID (kebab-case)
-- A clear name and description
-- Multiple pages with components
-- Proper navigation flow
 
-Available component types:
-- heading: Page titles and section headers
-- paragraph: Informational text
-- textInput: Text input fields
-- radios: Radio button groups
-- button: Navigation buttons`,
+CRITICAL REQUIREMENTS:
+
+1. **Page ID Naming Convention:**
+   - Use kebab-case for all page IDs (e.g., "applicant-details", "check-your-answers")
+   - The check your answers page MUST be named "check-your-answers" (not "check-answers")
+   - The completion page should be named "confirmation"
+
+2. **Required Journey Properties:**
+   - id: string (kebab-case)
+   - name: string (human-readable)
+   - checkYourAnswersPage: "check-your-answers" (MUST be this exact value)
+   - completionPage: "confirmation"
+   - startPage: string (first page ID)
+   - pages: object with all page definitions
+
+3. **Validation Rules for ALL Input Fields:**
+   Every textInput, email, tel, textarea, radios component MUST have:
+   
+   "validation": {
+     "required": true,
+     "minLength": number (for text fields),
+     "maxLength": number (for text fields),
+     "pattern": "email" | "phone" | "postcode" (for pattern validation),
+     "errorMessages": {
+       "required": "Enter [field name]",
+       "pattern": "Enter [field name] in the correct format, like [example]",
+       "minLength": "[Field name] must be at least [N] characters",
+       "maxLength": "[Field name] must be [N] characters or less"
+     }
+   }
+
+4. **Error Message Style (GOV.UK Guidelines):**
+   - Start with imperative verb: "Enter", "Select", "Choose"
+   - Be specific and helpful
+   - Include examples where appropriate
+   - Example: "Enter an email address in the correct format, like name@example.com"
+
+5. **Component Requirements:**
+   - Every input component MUST have: id, props.id, props.name, props.label
+   - Use consistent naming: id = props.id = props.name (all kebab-case)
+   - Add helpful hints where appropriate
+   - Use appropriate autocomplete attributes
+
+6. **Component Naming:**
+   - ALL IDs must use kebab-case (e.g., "applicant-full-name")
+   - props.id MUST match component.id
+   - props.name MUST match component.id
+   - NO camelCase (e.g., "applicantFullName" is WRONG)
+
+7. **Check Your Answers Page:**
+   MUST be structured exactly like this:
+   "check-your-answers": {
+     "id": "check-your-answers",
+     "title": "Check your answers",
+     "components": [
+       {
+         "type": "heading",
+         "id": "cya-heading",
+         "props": {
+           "text": "Check your answers before submitting",
+           "size": "l"
+         }
+       }
+     ],
+     "nextPage": "confirmation"
+   }
+
+VALIDATION EXAMPLES:
+
+**Text Input:**
+{
+  "type": "textInput",
+  "id": "full-name",
+  "props": {
+    "id": "full-name",
+    "name": "full-name",
+    "label": "Full name",
+    "type": "text",
+    "autocomplete": "name"
+  },
+  "validation": {
+    "required": true,
+    "minLength": 2,
+    "maxLength": 100,
+    "errorMessages": {
+      "required": "Enter your full name",
+      "minLength": "Full name must be at least 2 characters",
+      "maxLength": "Full name must be 100 characters or less"
+    }
+  }
+}
+
+**Email Input:**
+{
+  "type": "textInput",
+  "id": "email-address",
+  "props": {
+    "id": "email-address",
+    "name": "email-address",
+    "label": "Email address",
+    "type": "email",
+    "autocomplete": "email"
+  },
+  "validation": {
+    "required": true,
+    "pattern": "email",
+    "maxLength": 255,
+    "errorMessages": {
+      "required": "Enter your email address",
+      "pattern": "Enter an email address in the correct format, like name@example.com",
+      "maxLength": "Email address must be 255 characters or less"
+    }
+  }
+}
+
+**Radios:**
+{
+  "type": "radios",
+  "id": "applicant-type",
+  "props": {
+    "id": "applicant-type",
+    "name": "applicant-type",
+    "legend": "Who is applying?",
+    "items": [
+      {"value": "individual", "text": "An individual"},
+      {"value": "organisation", "text": "A company or organisation"}
+    ]
+  },
+  "validation": {
+    "required": true,
+    "errorMessages": {
+      "required": "Select who is applying"
+    }
+  }
+}
+
+Generate journeys that pass validation and work with the API!`,
                 },
                 { 
                     role: 'user', 
