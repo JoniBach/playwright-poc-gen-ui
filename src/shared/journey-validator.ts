@@ -73,6 +73,19 @@ export function validateJourney(journey: JourneyJson): ValidationResult {
                     });
                 }
 
+                // Check for duplicate title in heading components
+                if (component.type === 'heading' && page.title) {
+                    const headingText = component.props?.text || component.props?.content;
+                    if (headingText && headingText === page.title) {
+                        errors.push({
+                            path: [...componentPath, 'props'],
+                            message: `Heading component duplicates the page title "${page.title}". The page title is automatically rendered as an <h1> by GovUKPage, so this heading component is redundant and creates duplicate <h1> elements.`,
+                            expected: 'A different heading text or remove this component',
+                            received: headingText
+                        });
+                    }
+                }
+
                 // Type-specific validation
                 switch (component.type) {
                     case 'textInput':
@@ -311,8 +324,21 @@ export function autoFixJourney(journey: JourneyJson): { fixed: JourneyJson; chan
     // Fix pages
     if (fixed.pages) {
         Object.entries(fixed.pages).forEach(([pageId, page]: [string, any]) => {
+            // Track components to remove (duplicate headings)
+            const componentsToRemove: number[] = [];
+            
             page.components?.forEach((component: any, idx: number) => {
                 const componentId = component.id || `${component.type}-${idx}`;
+                
+                // Fix duplicate heading: remove heading components that match the page title
+                if (component.type === 'heading' && page.title) {
+                    const headingText = component.props?.text || component.props?.content;
+                    if (headingText && headingText === page.title) {
+                        componentsToRemove.push(idx);
+                        changes.push(`Removed duplicate heading "${headingText}" from page ${pageId} (page title already renders this as <h1>)`);
+                        return; // Skip other fixes for this component since it will be removed
+                    }
+                }
                 
                 // Fix textInput: add id to props
                 if (component.type === 'textInput' && component.props && !component.props.id) {
@@ -340,6 +366,11 @@ export function autoFixJourney(journey: JourneyJson): { fixed: JourneyJson; chan
                         changes.push(`Renamed text to content in warningText at page ${pageId}, component ${idx}`);
                     }
                 }
+            });
+            
+            // Remove duplicate heading components (in reverse order to maintain indices)
+            componentsToRemove.reverse().forEach(idx => {
+                page.components.splice(idx, 1);
             });
         });
     }

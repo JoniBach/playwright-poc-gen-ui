@@ -2,7 +2,7 @@
 
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { validateAllJourneys, formatValidationResults } from '../../playwright-poc-ui/src/lib/utils/journey-validator.js';
+import { validateJourney, displayValidationResults, autoFixJourney } from './shared/journey-validator.ts';
 
 /**
  * Validate all journey files against Zod schemas
@@ -50,23 +50,50 @@ async function main() {
   console.log('=====================\n');
   
   try {
-    // Load all journeys and index
+    // Load all journeys
     const journeys = await loadAllJourneys();
-    const journeyIndex = await loadJourneyIndex();
     
-    console.log(`📁 Loaded ${Object.keys(journeys).length} journey files`);
+    console.log(`📁 Loaded ${Object.keys(journeys).length} journey files\n`);
     
-    // Validate everything
-    const result = validateAllJourneys(journeys, journeyIndex);
+    let allValid = true;
+    let totalErrors = 0;
+    let totalWarnings = 0;
     
-    // Output formatted results
-    console.log('\n' + formatValidationResults(result));
+    // Validate each journey
+    for (const [journeyId, journey] of Object.entries(journeys)) {
+      console.log(`\n📋 Validating: ${journeyId}`);
+      console.log('─'.repeat(50));
+      
+      const result = validateJourney(journey);
+      displayValidationResults(result, journeyId);
+      
+      if (!result.valid) {
+        allValid = false;
+        totalErrors += result.errors.length;
+      }
+      totalWarnings += result.warnings.length;
+    }
+    
+    // Summary
+    console.log('\n' + '='.repeat(50));
+    console.log('📊 VALIDATION SUMMARY');
+    console.log('='.repeat(50));
+    console.log(`Total Journeys: ${Object.keys(journeys).length}`);
+    console.log(`Total Errors: ${totalErrors}`);
+    console.log(`Total Warnings: ${totalWarnings}`);
+    
+    if (allValid) {
+      console.log('\n✅ All journeys passed validation!');
+    } else {
+      console.log('\n❌ Some journeys have validation errors.');
+    }
     
     // Exit with appropriate code for CI/CD
-    process.exit(result.isValid ? 0 : 1);
+    process.exit(allValid ? 0 : 1);
     
   } catch (error) {
     console.error('❌ Validation failed:', error.message);
+    console.error(error.stack);
     process.exit(1);
   }
 }

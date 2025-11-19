@@ -6,7 +6,8 @@
   "main": "src/index.js",
   "scripts": {
     "generate": "node src/generate-journey.js",
-    "validate": "node src/validate-journeys.js",
+    "validate": "tsx src/validate-journeys.js",
+    "fix-duplicates": "tsx src/fix-duplicate-headings.ts",
     "install-deps": "npm install",
     "test": "npm run validate",
     "preflight": "tsx src/preflight.ts",
