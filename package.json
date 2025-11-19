@@ -11,7 +11,8 @@
     "test": "npm run validate",
     "preflight": "tsx src/preflight.ts",
     "generate:ai": "tsx src/openai-journey-example.ts",
-    "generate:article": "tsx src/generate-article.ts"
+    "generate:article": "tsx src/generate-article.ts",
+    "generate:index": "tsx src/generate-index-entry.ts"
   },
   "dependencies": {
     "openai": "^4.67.3",
