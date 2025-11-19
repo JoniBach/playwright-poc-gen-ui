@@ -21,7 +21,32 @@
 
 ## Usage
 
-### Generate Article (Recommended - Simple Example)
+### Generate Complete Journey (Recommended - Full Workflow)
+```bash
+npm run generate:index
+```
+
+**This is the complete workflow that:**
+1. Creates the index entry (metadata)
+2. Generates the full journey JSON
+3. Saves both files automatically
+
+**Interactive prompts:**
+- AI-assisted or Manual mode?
+- Describe the journey (e.g., "Apply for a fishing licence")
+- AI generates metadata (id, name, description, department)
+- Edit fields if needed
+- Save to index.json?
+- Generate full journey JSON? ✨ **NEW!**
+- Describe the journey flow
+- Save journey file?
+
+**Result:**
+- ✅ Entry added to `index.json`
+- ✅ Full journey JSON created in `static/journeys/{id}.json`
+- ✅ Ready to test in the UI immediately!
+
+### Generate Article (Simple Example)
 ```bash
 npm run generate:article
 ```
@@ -43,7 +68,7 @@ npm run generate:article
 npm run preflight
 ```
 
-### Generate Journey (Advanced)
+### Generate Journey Only (Advanced)
 
 **Interactive:**
 ```bash

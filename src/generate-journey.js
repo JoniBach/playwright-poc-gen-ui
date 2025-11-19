@@ -6,6 +6,7 @@ import { JourneySchema } from '../../playwright-poc-ui/src/lib/schemas/journey.s
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import inquirer from 'inquirer';
+import { validateAndRepair, displayValidationErrors } from './repair-journey.js';
 
 /**
  * AI-powered journey generator using Zod schemas
@@ -81,7 +82,7 @@ function generateIndexEntry(answers) {
   };
 }
 
-async function generateJourney(answers) {
+async function generateJourney(answers, indexEntry) {
   console.log(`🤖 Generating journey: ${answers.serviceName}`);
   
   const prompt = `Create a complete UK government service journey for "${answers.serviceName}".
@@ -90,7 +91,11 @@ Service Details:
 - Name: ${answers.serviceName}
 - Description: ${answers.description}
 - Department: ${answers.department}
+- Department Slug: ${indexEntry.departmentSlug}
+- Journey ID: ${indexEntry.id}
 - Type: ${answers.serviceType}
+
+CRITICAL: The landingPage.startButtonHref MUST be exactly: "/${indexEntry.departmentSlug}/${indexEntry.id}/apply"
 
 Requirements:
 - Follow GOV.UK design patterns
@@ -99,26 +104,93 @@ Requirements:
 - Include validation and error handling
 - Use appropriate component types (textInput, radios, dateInput, etc.)
 - Include a landing page, form pages, check answers, and confirmation
-- Make it realistic and user-friendly`;
+- Make it realistic and user-friendly
 
-  const completion = await client.beta.chat.completions.parse({
+Component Guidelines:
+- For text content components (paragraph, heading, insetText), use "text" property
+- For details and warningText components, use "text" property (not "content")
+- For summaryList with cards, use "card: true" for simple styling
+- For summaryList, add a "title" property for the card heading
+- For table components, use "headers" array for column names
+- For input widths, use values: "2", "5", "10", "20", "30", or "full"
+- DO NOT generate button components - navigation is automatic via nextPage/previousPage
+- Always include check-answers and confirmation pages`;
+
+  const completion = await client.chat.completions.create({
     model: 'gpt-4o-2024-08-06',
     messages: [
       {
         role: "system",
         content: `You are a UK government service designer expert in GOV.UK design patterns. 
         Create complete user journeys that follow government digital service standards.
+        
+        Return ONLY valid JSON matching the journey schema. No markdown, no explanations.
+        
+        CRITICAL URL REQUIREMENT:
+        The landingPage.startButtonHref MUST be exactly: "/${indexEntry.departmentSlug}/${indexEntry.id}/apply"
+        This is provided in the user prompt. Use it EXACTLY as specified.
+        
+        IMPORTANT Component Property Guidelines:
+        - Use "text" property for: paragraph, heading, insetText, details, warningText
+        - Use "content" property for: panel, notificationBanner (alternative to text)
+        - For summaryList: use "card: true" for simple cards, add "title" for card heading
+        - For table: use "headers" array for column names, "rows" as array of objects
+        - Input width values: "2", "5", "10", "20", "30", "full"
+        - DO NOT generate button components - navigation is automatic via nextPage/previousPage
+        - Always create check-answers and confirmation pages
+        
+        CRITICAL: Do not add button components to pages. The journey system automatically 
+        handles navigation using the nextPage and previousPage properties on each page.
+        
         Ensure all components use the correct props and structure.
         Make the journey realistic and appropriate for the service type.`
       },
       { role: "user", content: prompt }
     ],
-    response_format: zodResponseFormat(JourneySchema, 'governmentJourney')
+    response_format: { type: "json_object" }
   });
 
-  const journey = completion.choices[0]?.message?.parsed;
-  if (!journey) {
-    throw new Error('Failed to generate journey: ' + completion.choices[0]?.message?.refusal);
+  const content = completion.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error('Failed to generate journey: No content returned');
+  }
+
+  let journey;
+  try {
+    journey = JSON.parse(content);
+  } catch (e) {
+    throw new Error('Failed to parse journey JSON: ' + e.message);
+  }
+
+  // Post-process: Fix startButtonHref if AI generated it incorrectly
+  // This MUST happen before validation since the schema will reject incorrect URLs
+  if (journey.landingPage && journey.landingPage.startButtonHref) {
+    const correctHref = `/${indexEntry.departmentSlug}/${indexEntry.id}/apply`;
+    if (journey.landingPage.startButtonHref !== correctHref) {
+      console.log(`⚠️  Fixing incorrect startButtonHref: "${journey.landingPage.startButtonHref}" → "${correctHref}"`);
+      journey.landingPage.startButtonHref = correctHref;
+    }
+  }
+
+  // Remove button components if AI generated them (they shouldn't exist)
+  if (journey.pages) {
+    Object.keys(journey.pages).forEach(pageId => {
+      const page = journey.pages[pageId];
+      if (page.components) {
+        const originalLength = page.components.length;
+        page.components = page.components.filter(c => c.type !== 'button');
+        if (page.components.length < originalLength) {
+          console.log(`⚠️  Removed ${originalLength - page.components.length} button component(s) from page: ${pageId}`);
+        }
+      }
+    });
+  }
+
+  // Now validate the fixed journey
+  const validationResult = JourneySchema.safeParse(journey);
+  if (!validationResult.success) {
+    console.warn('⚠️  Journey validation failed after post-processing. Errors:', validationResult.error.errors);
+    // Return the journey anyway - the main validation loop will catch it
   }
 
   return journey;
@@ -173,10 +245,68 @@ async function main() {
     const indexEntry = generateIndexEntry(answers);
     
     // Generate journey with AI
-    const journey = await generateJourney(answers);
+    let journey = await generateJourney(answers, indexEntry);
     
     // Validate the generated journey
-    console.log('✅ Journey generated and validated successfully!');
+    console.log('\n🔍 Validating generated journey...');
+    const validationResult = JourneySchema.safeParse(journey);
+    
+    if (!validationResult.success) {
+      // Validation failed - show errors and offer repair
+      console.log('\n⚠️  Generated journey has validation errors!');
+      displayValidationErrors(validationResult.error);
+      
+      // Ask user if they want to attempt repair
+      const repairChoice = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'What would you like to do?',
+          choices: [
+            { name: '🔧 Attempt AI-powered repair (recommended)', value: 'repair' },
+            { name: '💾 Save anyway (may cause runtime errors)', value: 'save' },
+            { name: '❌ Cancel and exit', value: 'cancel' }
+          ]
+        }
+      ]);
+      
+      if (repairChoice.action === 'cancel') {
+        console.log('\n❌ Journey generation cancelled.');
+        process.exit(0);
+      }
+      
+      if (repairChoice.action === 'repair') {
+        console.log('\n🔧 Attempting AI-powered repair...');
+        const repairResult = await validateAndRepair(journey, 3);
+        
+        if (repairResult.success) {
+          console.log(`\n✅ Journey repaired successfully after ${repairResult.attemptsUsed} attempt(s)!`);
+          journey = repairResult.journey;
+        } else {
+          console.log('\n❌ Repair failed after maximum attempts.');
+          displayValidationErrors(repairResult.zodError);
+          
+          const finalChoice = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'saveAnyway',
+              message: 'Save the journey anyway? (may cause runtime errors)',
+              default: false
+            }
+          ]);
+          
+          if (!finalChoice.saveAnyway) {
+            console.log('\n❌ Journey generation cancelled.');
+            process.exit(1);
+          }
+          
+          journey = repairResult.lastAttempt;
+        }
+      }
+    } else {
+      console.log('✅ Journey validation passed!');
+    }
+    
     console.log(`📊 Pages: ${Object.keys(journey.pages).length}`);
     console.log(`🏷️  ID: ${journey.id}`);
     
@@ -184,7 +314,7 @@ async function main() {
     saveJourney(journey, indexEntry);
     
     console.log('\n🎉 Journey generation complete!');
-    console.log(`🌐 View at: http://localhost:5173/${indexEntry.departmentSlug}/${indexEntry.slug}`);
+    console.log(`🌐 View at: http://localhost:5173/${indexEntry.departmentSlug}/${indexEntry.slug}/apply`);
     
   } catch (error) {
     console.error('❌ Generation failed:', error.message);

@@ -6,6 +6,7 @@ import inquirer from 'inquirer';
 import { runPreflight } from './preflight.js';
 import fs from 'fs';
 import path from 'path';
+import { generateJourney, displayJourney, saveJourneyToFile } from './shared/journey-generator.js';
 
 // Load environment variables
 dotenv.config();
@@ -408,11 +409,85 @@ async function main() {
     if (shouldSave) {
         const saved = await saveToIndexFile(metadata);
         if (saved) {
-            console.log('🎉 Success! Your journey metadata has been added to index.json');
-            console.log('\n💡 Next steps:');
-            console.log('   1. Create the actual journey JSON file in static/journeys/');
-            console.log(`   2. Use: npm run generate:ai "${metadata.name}"`);
-            console.log('   3. Test your journey in the UI\n');
+            console.log('🎉 Success! Your journey metadata has been added to index.json\n');
+            
+            // Offer to generate the full journey JSON
+            const { generateFullJourney } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'generateFullJourney',
+                    message: '🚀 Generate the full journey JSON file now?',
+                    default: true
+                }
+            ]);
+
+            if (generateFullJourney) {
+                // Get additional context for journey generation
+                const { journeyPrompt } = await inquirer.prompt([
+                    {
+                        type: 'input',
+                        name: 'journeyPrompt',
+                        message: 'Describe the journey flow (pages, questions, etc.):',
+                        default: `Create a ${metadata.name} journey with appropriate pages and form fields`,
+                        validate: (input: string) => {
+                            if (input.trim().length === 0) {
+                                return 'Please enter a description';
+                            }
+                            return true;
+                        }
+                    }
+                ]);
+
+                // Generate the full journey
+                const journey = await generateJourney({
+                    id: metadata.id,
+                    name: metadata.name,
+                    description: metadata.description,
+                    prompt: journeyPrompt,
+                    department: metadata.department
+                });
+
+                if (journey) {
+                    displayJourney(journey);
+
+                    // Show full JSON
+                    console.log('📄 Full Journey JSON:');
+                    console.log(JSON.stringify(journey, null, 2));
+                    console.log('');
+
+                    // Ask to save
+                    const { saveJourney } = await inquirer.prompt([
+                        {
+                            type: 'confirm',
+                            name: 'saveJourney',
+                            message: 'Save this journey to file?',
+                            default: true
+                        }
+                    ]);
+
+                    if (saveJourney) {
+                        const journeySaved = await saveJourneyToFile(journey);
+                        if (journeySaved) {
+                            console.log('🎉 Complete! Your journey is ready to use.\n');
+                            console.log('💡 Next steps:');
+                            console.log('   1. Review the generated journey JSON');
+                            console.log('   2. Test your journey in the UI');
+                            console.log(`   3. Navigate to: http://localhost:5173/${metadata.departmentSlug}/${metadata.slug}/apply\n`);
+                        } else {
+                            console.log('⚠️  Journey file already exists. Please delete it first or use a different ID.\n');
+                        }
+                    } else {
+                        console.log('📋 Journey not saved. You can copy the JSON above manually.\n');
+                    }
+                } else {
+                    console.error('❌ Failed to generate journey\n');
+                }
+            } else {
+                console.log('\n💡 Next steps:');
+                console.log('   1. Create the actual journey JSON file in static/journeys/');
+                console.log(`   2. Use: npm run generate:ai "${metadata.name}"`);
+                console.log('   3. Test your journey in the UI\n');
+            }
         }
     } else {
         console.log('📋 Metadata not saved. You can copy the JSON above manually.\n');
