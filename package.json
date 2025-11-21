@@ -13,7 +13,12 @@
     "preflight": "tsx src/preflight.ts",
     "generate:ai": "tsx src/openai-journey-example.ts",
     "generate:article": "tsx src/generate-article.ts",
-    "generate:index": "tsx src/generate-index-entry.ts"
+    "generate:index": "tsx src/generate-index-entry.ts",
+    "generate:stories": "tsx src/generate-stories.ts",
+    "generate:stories:interactive": "tsx src/generate-stories-interactive.ts",
+    "generate:stories:all": "tsx src/generate-stories.ts --all --verbose --output=markdown",
+    "generate:stories:markdown": "tsx src/generate-stories.ts --all --format=markdown --output=markdown --verbose",
+    "generate:stories:playwright": "tsx src/generate-stories.ts --all --format=playwright --output=../playwright-poc-qa/tests/generated/"
   },
   "dependencies": {
     "openai": "^4.67.3",

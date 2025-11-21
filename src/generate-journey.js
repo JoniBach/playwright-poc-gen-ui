@@ -2,7 +2,7 @@
 
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
-import { JourneySchema } from '../../playwright-poc-ui/src/lib/schemas/journey.schema.js';
+import { JourneySchema } from '../../playwright-poc-ui/src/lib/schemas/journey.schema.ts';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import inquirer from 'inquirer';
