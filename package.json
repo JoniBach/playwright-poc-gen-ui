@@ -18,7 +18,12 @@
     "generate:stories:interactive": "tsx src/generate-stories-interactive.ts",
     "generate:stories:all": "tsx src/generate-stories.ts --all --verbose --output=markdown",
     "generate:stories:markdown": "tsx src/generate-stories.ts --all --format=markdown --output=markdown --verbose",
-    "generate:stories:playwright": "tsx src/generate-stories.ts --all --format=playwright --output=../playwright-poc-qa/tests/generated/"
+    "generate:stories:playwright": "tsx src/generate-stories.ts --all --format=playwright --output=../playwright-poc-qa/tests/generated/",
+    "generate:tests": "tsx src/generate-stories.ts --format=playwright-full",
+    "generate:tests:all": "tsx src/generate-stories.ts --all --format=playwright-full --output=../playwright-poc-qa/tests/generated/ --verbose",
+    "generate:tests:adaptive": "tsx src/generate-stories.ts --format=playwright-full --test-style=adaptive",
+    "generate:tests:realistic": "tsx src/generate-stories.ts --format=playwright-full --test-style=realistic",
+    "generate:tests:simple": "tsx src/generate-stories.ts --format=playwright-full --test-style=simple"
   },
   "dependencies": {
     "openai": "^4.67.3",

@@ -23,22 +23,25 @@ import {
 	formatAsPlaywrightStubs,
 	formatAsConsole
 } from './shared/story-formatter.js';
+import { generatePlaywrightTestsSimple } from './shared/playwright-test-generator-simple.js';
 
 interface CLIOptions {
 	journey?: string;
 	all?: boolean;
-	format?: 'markdown' | 'gherkin' | 'json' | 'csv' | 'playwright';
+	format?: 'markdown' | 'gherkin' | 'json' | 'csv' | 'playwright' | 'playwright-full';
 	output?: string;
 	openaiKey?: string;
 	model?: string;
 	verbose?: boolean;
+	testStyle?: 'simple' | 'realistic' | 'adaptive';
 }
 
 function parseArgs(): CLIOptions {
 	const args = process.argv.slice(2);
 	const options: CLIOptions = {
 		format: 'markdown',
-		verbose: false
+		verbose: false,
+		testStyle: 'adaptive'
 	};
 
 	args.forEach(arg => {
@@ -54,6 +57,8 @@ function parseArgs(): CLIOptions {
 			options.openaiKey = arg.split('=')[1];
 		} else if (arg.startsWith('--model=')) {
 			options.model = arg.split('=')[1];
+		} else if (arg.startsWith('--test-style=')) {
+			options.testStyle = arg.split('=')[1] as CLIOptions['testStyle'];
 		} else if (arg === '--verbose' || arg === '-v') {
 			options.verbose = true;
 		}
@@ -168,6 +173,11 @@ async function generateStoriesForJourney(
 			break;
 		case 'playwright':
 			output = formatAsPlaywrightStubs(stories);
+			fileExtension = 'spec.ts';
+			break;
+		case 'playwright-full':
+			// Generate complete working Playwright tests using adaptive blocks
+			output = generatePlaywrightTestsSimple(analysis, stories);
 			fileExtension = 'spec.ts';
 			break;
 		case 'markdown':
