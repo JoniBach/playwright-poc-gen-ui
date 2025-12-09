@@ -7,7 +7,8 @@ import type { JourneyStories } from './user-story.schema.js';
 
 export function generatePlaywrightTestsSimple(
   analysis: any, // JourneyAnalysis type not exported
-  stories: JourneyStories
+  stories: JourneyStories,
+  journey?: any // Journey config object
 ): string {
   const lines: string[] = [];
 
@@ -35,7 +36,10 @@ export function generatePlaywrightTestsSimple(
 
   // Test suite
   lines.push(`test.describe('${analysis.journeyName || analysis.journeyId}', () => {`);
-  lines.push(`  const JOURNEY_PATH = '/department-for-business-and-trade/${analysis.journeyId}/apply';`);
+  // Extract journey path from the journey configuration
+  console.log('DEBUG journey object:', JSON.stringify(journey, null, 2));
+  const journeyPath = journey?.landingPage?.startButtonHref || `/${journey?.departmentSlug || 'department-for-business-and-trade'}/${analysis.journeyId}/apply`;
+  lines.push(`  const JOURNEY_PATH = '${journeyPath}';`);
   lines.push('');
 
   // Happy path test
@@ -85,8 +89,6 @@ export function generatePlaywrightTestsSimple(
     // Special handling for specific pages
     if (page.id === 'check-answers' || primaryHeading.toLowerCase().includes('check your answers')) {
       primaryHeading = 'Check your answers';
-    } else if (page.id === 'confirmation' || primaryHeading.toLowerCase().includes('submitted')) {
-      primaryHeading = 'Your application has been submitted';
     }
     
     const escapedHeading = primaryHeading.replace(/'/g, "\\'");
@@ -150,12 +152,24 @@ export function generatePlaywrightTestsSimple(
 function extractFormFields(page: any): Array<{ label: string; type: string; id: string; props?: any }> {
   return page.components
     .filter((c: any) => ['textInput', 'radios', 'checkboxes', 'select'].includes(c.type))
-    .map((c: any) => ({
-      label: c.props?.label || c.props?.legend || c.id,
-      type: c.type,
-      id: c.id,
-      props: c.props
-    }));
+    .map((c: any) => {
+      let label = c.props?.label || c.props?.legend || c.id;
+
+      // For radio buttons, use the first option's text as the label for selection
+      if (c.type === 'radios') {
+        const items = c.props?.items || c.props?.options || [];
+        if (items.length > 0) {
+          label = items[0].text || items[0].label || label;
+        }
+      }
+
+      return {
+        label: label,
+        type: c.type,
+        id: c.id,
+        props: c.props
+      };
+    });
 }
 
 /**
@@ -170,6 +184,17 @@ function generateFieldValue(field: { label: string; type: string; id: string; pr
     return 'contactData.email';
   }
 
+  // Date picker components - Day/Month/Year pattern
+  if (label === 'day' || id.includes('day') || id.includes('dob-day')) {
+    return "'15'"; // Valid day 1-31
+  }
+  if (label === 'month' || id.includes('month') || id.includes('dob-month')) {
+    return "'06'"; // Valid month 1-12
+  }
+  if (label === 'year' || id.includes('year') || id.includes('dob-year')) {
+    return "'1990'"; // Valid birth year
+  }
+
   // Name fields
   if (label.includes('first name') || label.includes('given name') || id.includes('firstname')) {
     return "'John'";
@@ -179,6 +204,11 @@ function generateFieldValue(field: { label: string; type: string; id: string; pr
   }
   if (label.includes('full name') || (label.includes('name') && !label.includes('company'))) {
     return 'contactData.fullName';
+  }
+
+  // National Insurance number
+  if (label.includes('national insurance') || id.includes('national-insurance')) {
+    return "'QQ 12 34 56 C'";
   }
 
   // Company name
@@ -208,13 +238,19 @@ function generateFieldValue(field: { label: string; type: string; id: string; pr
     return 'contactData.phone';
   }
 
-  // Date fields
+  // Date fields (provide structured date object for components that expect it)
   if (label.includes('date') || id.includes('date')) {
+    // Check if this is a date-of-birth field that expects structured input
+    if (id.includes('date-of-birth') || label.toLowerCase().includes('date of birth')) {
+      // Use DD MM YYYY format that JourneyRunner can parse
+      return "'01 01 2000'";
+    }
+    // Fallback to string format for other date fields
     return "'01/01/2024'";
   }
 
   // Number/quantity fields
-  if (label.includes('number') || label.includes('count') || label.includes('quantity') || 
+  if (label.includes('number') || label.includes('count') || label.includes('quantity') ||
       label.includes('shares') || label.includes('value')) {
     return "'100'";
   }
@@ -233,7 +269,13 @@ function generateFieldValue(field: { label: string; type: string; id: string; pr
 
   // Checkboxes
   if (field.type === 'checkboxes') {
-    return "['Option 1']"; // Default to array
+    // Try to get checkbox labels from props (not values)
+    const items = field.props?.items || field.props?.options;
+    if (items && items.length > 0) {
+      const labels = items.map((item: any) => item.text || item.label || item.value || item).filter(Boolean);
+      return `[${labels.map((l: string) => `'${l.replace(/'/g, "\\'")}'`).join(', ')}]`;
+    }
+    return "['The information I have given is true, complete and accurate.', 'I consent to the Disclosure and Barring Service checking the information I have provided.']"; // Default for consent checkboxes
   }
 
   // Select dropdown

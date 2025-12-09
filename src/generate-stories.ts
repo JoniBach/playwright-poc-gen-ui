@@ -34,6 +34,7 @@ interface CLIOptions {
 	model?: string;
 	verbose?: boolean;
 	testStyle?: 'simple' | 'realistic' | 'adaptive';
+	skipStories?: boolean;
 }
 
 function parseArgs(): CLIOptions {
@@ -59,6 +60,8 @@ function parseArgs(): CLIOptions {
 			options.model = arg.split('=')[1];
 		} else if (arg.startsWith('--test-style=')) {
 			options.testStyle = arg.split('=')[1] as CLIOptions['testStyle'];
+		} else if (arg === '--skip-stories') {
+			options.skipStories = true;
 		} else if (arg === '--verbose' || arg === '-v') {
 			options.verbose = true;
 		}
@@ -139,19 +142,59 @@ async function generateStoriesForJourney(
 	}
 
 	// Tier 2: Generate stories with AI (or deterministic fallback)
-	if (options.verbose) {
-		console.log('   🤖 Generating user stories...');
-	}
-	const stories = await generateUserStories(analysis, {
-		openaiApiKey: options.openaiKey || process.env.OPENAI_API_KEY,
-		model: options.model,
-		includeTestScenarios: true
-	});
+	let stories: JourneyStories;
+	if (options.skipStories) {
+		if (options.verbose) {
+			console.log('   ⏭️  Skipping story generation (--skip-stories flag)');
+		}
+		// Create minimal stories object for test generation
+		stories = {
+			journeyId: journeyId,
+			journeyTitle: analysis.journeyName || journeyId,
+			summary: {
+				totalStories: 1,
+				totalAcceptanceCriteria: 1,
+				totalTestScenarios: 1
+			},
+			stories: [{
+				id: `${journeyId}-test-story`,
+				title: `Test Story for ${journeyId}`,
+				description: `Automated test story for ${journeyId}`,
+				acceptanceCriteria: [{
+					id: 'test-ac-1',
+					description: 'Test acceptance criteria',
+					priority: 'high' as const,
+					tags: ['automation']
+				}],
+				testScenarios: [{
+					id: 'test-scenario-1',
+					title: 'Test scenario',
+					given: 'User is on the journey start page',
+					when: 'User completes the journey',
+					then: 'Journey completes successfully',
+					priority: 'high' as const,
+					tags: ['end-to-end']
+				}],
+				complexity: 'medium' as const,
+				pages: analysis.pages.map(p => p.id),
+				tags: ['generated']
+			}]
+		};
+	} else {
+		if (options.verbose) {
+			console.log('   🤖 Generating user stories...');
+		}
+		stories = await generateUserStories(analysis, {
+			openaiApiKey: options.openaiKey || process.env.OPENAI_API_KEY,
+			model: options.model,
+			includeTestScenarios: true
+		});
 
-	if (options.verbose) {
-		console.log(`   ✓ Generated ${stories.summary.totalStories} stories`);
-		console.log(`   ✓ Created ${stories.summary.totalAcceptanceCriteria} acceptance criteria`);
-		console.log(`   ✓ Prepared ${stories.summary.totalTestScenarios} test scenarios`);
+		if (options.verbose) {
+			console.log(`   ✓ Generated ${stories.summary.totalStories} stories`);
+			console.log(`   ✓ Created ${stories.summary.totalAcceptanceCriteria} acceptance criteria`);
+			console.log(`   ✓ Prepared ${stories.summary.totalTestScenarios} test scenarios`);
+		}
 	}
 
 	// Format output
@@ -177,7 +220,7 @@ async function generateStoriesForJourney(
 			break;
 		case 'playwright-full':
 			// Generate complete working Playwright tests using adaptive blocks
-			output = generatePlaywrightTestsSimple(analysis, stories);
+			output = generatePlaywrightTestsSimple(analysis, stories, journey);
 			fileExtension = 'spec.ts';
 			break;
 		case 'markdown':
