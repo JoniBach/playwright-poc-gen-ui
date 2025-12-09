@@ -62,7 +62,8 @@ export function generatePlaywrightTestsSimple(
     lines.push(`        // Start journey`);
     lines.push(`        .addCustomStep(async ({ journeyRunner }) => {`);
     lines.push(`          await journeyRunner.startJourney(JOURNEY_PATH);`);
-    lines.push(`          await journeyRunner.verifyHeading('Before you start');`);
+    const startHeading = startPage.title || 'Before you start';
+    lines.push(`          await journeyRunner.verifyHeading('${startHeading.replace(/'/g, "\\'")}');`);
     lines.push(`          await journeyRunner.continue();`);
     lines.push(`        })`);
   }
