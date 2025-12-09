@@ -51,6 +51,7 @@ export function generatePlaywrightTestsSimple(
   lines.push(`      componentHelper`);
   lines.push(`    }) => {`);
   lines.push(`      const contactData = TestDataFactory.generateContactDetails();`);
+  lines.push(`      const testPostcode = TestDataFactory.generatePostcode();`);
   lines.push(`      const builder = new JourneyBuilder(page, journeyRunner, componentHelper);`);
   lines.push('');
   lines.push(`      await builder`);
@@ -69,7 +70,7 @@ export function generatePlaywrightTestsSimple(
   // Process other pages
   analysis.pages.slice(1).forEach((page, index) => {
     const heading = page.components.find(c => c.type === 'heading');
-    const headingText = heading?.props?.text || page.title || `Step ${index + 1}`;
+    const headingText = page.title || heading?.props?.text || `Step ${index + 1}`;
     
     lines.push(`        // ${page.id}`);
     lines.push(`        .addCustomStep(async ({ journeyRunner }) => {`);
@@ -227,7 +228,7 @@ function generateFieldValue(field: { label: string; type: string; id: string; pr
     return "'London'";
   }
   if (label.includes('postcode') || label.includes('zip') || id.includes('postcode')) {
-    return "'SW1A 1AA'";
+    return 'testPostcode';
   }
   if (label.includes('county') || label.includes('region')) {
     return "''"; // Optional field
@@ -238,15 +239,11 @@ function generateFieldValue(field: { label: string; type: string; id: string; pr
     return 'contactData.phone';
   }
 
-  // Date fields (provide structured date object for components that expect it)
+  // Date fields (handle dateInput components with separate day/month/year fields)
   if (label.includes('date') || id.includes('date')) {
-    // Check if this is a date-of-birth field that expects structured input
-    if (id.includes('date-of-birth') || label.toLowerCase().includes('date of birth')) {
-      // Use DD MM YYYY format that JourneyRunner can parse
-      return "'01 01 2000'";
-    }
-    // Fallback to string format for other date fields
-    return "'01/01/2024'";
+    // For dateInput components, we need to fill separate fields
+    // This will be handled by JourneyRunner.fillDateField()
+    return "'01 01 2000'"; // DD MM YYYY format for parsing
   }
 
   // Number/quantity fields
