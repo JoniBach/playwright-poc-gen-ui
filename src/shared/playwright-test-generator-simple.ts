@@ -64,6 +64,18 @@ export function generatePlaywrightTestsSimple(
     lines.push(`          await journeyRunner.startJourney(JOURNEY_PATH);`);
     const startHeading = startPage.title || 'Before you start';
     lines.push(`          await journeyRunner.verifyHeading('${startHeading.replace(/'/g, "\\'")}');`);
+
+    // Extract and fill form fields on the start page if any exist
+    const startFormFields = extractFormFields(startPage);
+    if (startFormFields.length > 0) {
+      lines.push(`          await journeyRunner.fillStep({`);
+      startFormFields.forEach(field => {
+        const value = generateFieldValue(field);
+        lines.push(`            '${field.label.replace(/'/g, "\\'")}': ${value},`);
+      });
+      lines.push(`          });`);
+    }
+
     lines.push(`          await journeyRunner.continue();`);
     lines.push(`        })`);
   }
