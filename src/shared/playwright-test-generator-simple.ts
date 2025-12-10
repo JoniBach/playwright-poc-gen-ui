@@ -169,11 +169,13 @@ function extractFormFields(page: any): Array<{ label: string; type: string; id: 
     .map((c: any) => {
       let label = c.props?.label || c.props?.legend || c.id;
 
-      // For radio buttons, use the first option's text as the label for selection
+      // For radio buttons, use the legend + first option's text to make it unique
       if (c.type === 'radios') {
+        const legend = c.props?.legend || c.props?.name || c.id;
         const items = c.props?.items || c.props?.options || [];
         if (items.length > 0) {
-          label = items[0].text || items[0].label || label;
+          const firstOption = items[0].text || items[0].label || 'Yes';
+          label = `${legend}: ${firstOption}`;
         }
       }
 
@@ -267,7 +269,25 @@ function generateFieldValue(field: { label: string; type: string; id: string; pr
 
   // Radio buttons - check for options
   if (field.type === 'radios') {
-    // Try to get first option from props
+    // If label contains colon, extract the value from the legend:option format
+    if (label.includes(': ')) {
+      const parts = label.split(': ');
+      if (parts.length >= 2) {
+        const optionText = parts[1];
+        // Try to find the value for this option text
+        const items = field.props?.items || field.props?.options;
+        if (items && items.length > 0) {
+          const matchingItem = items.find((item: any) => 
+            item.text === optionText || item.label === optionText
+          );
+          if (matchingItem) {
+            return `'${matchingItem.value || optionText}'`;
+          }
+        }
+        return `'${optionText}'`;
+      }
+    }
+    // Fallback to original logic
     const items = field.props?.items || field.props?.options;
     if (items && items.length > 0) {
       const firstOption = items[0];
