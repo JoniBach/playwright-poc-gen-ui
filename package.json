@@ -23,18 +23,24 @@
     "generate:tests:all": "tsx src/generate-stories.ts --all --format=playwright-full --output=../playwright-poc-qa/tests/generated/ --verbose",
     "generate:tests:adaptive": "tsx src/generate-stories.ts --format=playwright-full --test-style=adaptive",
     "generate:tests:realistic": "tsx src/generate-stories.ts --format=playwright-full --test-style=realistic",
-    "generate:tests:simple": "tsx src/generate-stories.ts --format=playwright-full --test-style=simple"
+    "generate:tests:simple": "tsx src/generate-stories.ts --format=playwright-full --test-style=simple",
+    "gen:v2": "tsx src/v2/cli.ts"
   },
   "dependencies": {
-    "openai": "^4.67.3",
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.2",
+    "dotenv": "^16.4.5",
     "inquirer": "^10.2.2",
-    "zod": "^3.23.8",
-    "dotenv": "^16.4.5"
+    "listr2": "^9.0.5",
+    "openai": "^4.67.3",
+    "ora": "^9.0.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.3.3",
-    "tsx": "^4.7.0"
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -43,7 +49,13 @@
     "type": "git",
     "url": "git@github.com:JoniBach/playwright-poc-gen-ui.git"
   },
-  "keywords": ["ai", "journey-generation", "govuk", "zod", "openai"],
+  "keywords": [
+    "ai",
+    "journey-generation",
+    "govuk",
+    "zod",
+    "openai"
+  ],
   "author": "JoniBach",
   "license": "MIT"
 }
