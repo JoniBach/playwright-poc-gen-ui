@@ -46,7 +46,6 @@ export class OpenAIUtil {
 
         logger.info('Running OpenAI preflight checks...');
 
-
         // Check 1: Environment variables
         logger.info('Checking environment variables...');
 
