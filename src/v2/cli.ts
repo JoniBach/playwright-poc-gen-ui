@@ -384,14 +384,15 @@ async function handleIndexCommand(): Promise<void> {
  * Handles the journeys generation command
  */
 async function handleJourneysCommand(): Promise<void> {
-  const spinner = createSpinner(MESSAGES.journeys.generating).start();
+  // Journeys generation is interactive, so don't use spinner
+  console.clear();
 
   try {
     await genJourneys();
-    spinner.succeed(chalk.green(MESSAGES.journeys.success));
-    process.exit(0);
+    // Don't exit here - let genJourneys handle its own completion
   } catch (error) {
-    handleCommandError(spinner, 'journey configurations', error);
+    console.error(chalk.red('Journey generation failed:'), error);
+    process.exit(1);
   }
 }
 
