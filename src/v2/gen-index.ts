@@ -12,12 +12,49 @@ import { JourneyMetadataSchema, IndexEntrySchema } from './schemas/index.js';
 // Get logger instance
 const logger = Logger.getInstance();
 
+// Configuration constants
+const CONFIG = {
+    INDEX_FILE_PATH: '../playwright-poc-ui/static/journeys/index.json',
+    DEFAULT_JOURNEY_DESCRIPTION: 'Apply for a driving licence',
+    MIN_DESCRIPTION_LENGTH: 3,
+} as const;
+
+// Error classes for better error handling
+class IndexGenerationError extends Error {
+    constructor(message: string, public readonly code: string) {
+        super(message);
+        this.name = 'IndexGenerationError';
+    }
+}
+
+class ValidationError extends IndexGenerationError {
+    constructor(message: string) {
+        super(message, 'VALIDATION_ERROR');
+    }
+}
+
+class FileOperationError extends IndexGenerationError {
+    constructor(message: string) {
+        super(message, 'FILE_OPERATION_ERROR');
+    }
+}
+
+// Preflight check function
+async function performPreflightChecks(): Promise<void> {
+    logger.info('Running OpenAI preflight checks...');
+
+    const isReady = await openaiUtil.isReady();
+    if (!isReady) {
+        throw new IndexGenerationError('Preflight checks failed. Please check your configuration.', 'PREFLIGHT_FAILED');
+    }
+
+    logger.success('All preflight checks passed!');
+}
+
 // Function to read and parse the index file
 async function readIndexFile(): Promise<any[]> {
-    const indexFilePath = '../playwright-poc-ui/static/journeys/index.json';
-
     try {
-        const readResult = await fileManager.readFile(indexFilePath);
+        const readResult = await fileManager.readFile(CONFIG.INDEX_FILE_PATH);
         if (!readResult.success) {
             logger.warn('Could not read index file, starting with empty list');
             return [];
@@ -58,6 +95,113 @@ function generateDepartmentSlug(departmentName: string): string {
         .replace(/[^a-z0-9\s]/g, '')
         .replace(/\s+/g, '-')
         .trim();
+}
+
+// User input collection function
+async function collectUserInput(existingDepartments: Array<{name: string, value: string, slug: string}>): Promise<{ creationMethod: string; journeyDescription: string }> {
+    const baseQuestions: any[] = [
+        {
+            type: 'list',
+            name: 'creationMethod',
+            message: 'How would you like to create the journey metadata?',
+            choices: [
+                {
+                    name: '🤖 AI-assisted (describe journey, AI generates metadata)',
+                    value: 'ai-assisted',
+                    short: 'AI-assisted'
+                }
+            ]
+        },
+        {
+            type: 'input',
+            name: 'journeyDescription',
+            message: 'Describe the journey you want to create:',
+            default: CONFIG.DEFAULT_JOURNEY_DESCRIPTION,
+            when: (answers: any) => answers.creationMethod === 'ai-assisted',
+            validate: (input: string) => {
+                if (input.trim().length < CONFIG.MIN_DESCRIPTION_LENGTH) {
+                    return `Please provide a more detailed description (at least ${CONFIG.MIN_DESCRIPTION_LENGTH} characters)`;
+                }
+                return true;
+            }
+        }
+    ];
+
+    const result = await inquirer.prompt(baseQuestions);
+    return result as { creationMethod: string; journeyDescription: string };
+}
+
+// Entry validation function
+function validateIndexEntry(entry: any): z.infer<typeof IndexEntrySchema> {
+    try {
+        return IndexEntrySchema.parse(entry);
+    } catch (error) {
+        throw new ValidationError(`Invalid index entry: ${error instanceof Error ? error.message : 'Unknown validation error'}`);
+    }
+}
+
+// Results display function
+function displayGeneratedEntry(entry: z.infer<typeof IndexEntrySchema>): void {
+    const resultDisplay = [
+        `${chalk.cyan('ID:')}          ${entry.id}`,
+        `${chalk.cyan('Name:')}        ${entry.name}`,
+        `${chalk.cyan('Description:')} ${entry.description}`,
+        `${chalk.cyan('Slug:')}        ${entry.slug}`,
+        `${chalk.cyan('Department:')}  ${entry.department}`,
+        `${chalk.cyan('Dept Slug:')}   ${entry.departmentSlug}`,
+        `${chalk.cyan('Type:')}        ${entry.type}`,
+        `${chalk.cyan('Enabled:')}     ${entry.enabled}`,
+        `${chalk.cyan('Created:')}     ${entry.created}`
+    ].join('\n');
+
+    console.log(boxen(
+        resultDisplay,
+        {
+            padding: 1,
+            margin: 1,
+            borderStyle: 'round',
+            borderColor: 'green',
+            title: '📋 Journey Metadata',
+            titleAlignment: 'center'
+        }
+    ));
+}
+
+// Save confirmation function
+async function confirmSave(): Promise<boolean> {
+    const { saveEntry } = await inquirer.prompt([
+        {
+            type: 'confirm',
+            name: 'saveEntry',
+            message: 'Save this entry to the journey index?',
+            default: true
+        }
+    ]);
+
+    return saveEntry;
+}
+
+// Index saving function
+async function saveIndexEntry(entry: z.infer<typeof IndexEntrySchema>, existingJourneys: any[]): Promise<void> {
+    // Check if journey with this ID already exists
+    const existingJourney = existingJourneys.find((j: any) => j.id === entry.id);
+    if (existingJourney) {
+        throw new ValidationError(`Journey with ID '${entry.id}' already exists in index.`);
+    }
+
+    // Add new journey
+    const updatedJourneys = [...existingJourneys, entry];
+
+    // Write updated index back to file
+    logger.info('Updating journey index file...');
+    const writeResult = await fileManager.writeFile(CONFIG.INDEX_FILE_PATH, JSON.stringify({ journeys: updatedJourneys }, null, 2));
+
+    if (!writeResult.success) {
+        throw new FileOperationError(`Failed to update index file: ${writeResult.error}`);
+    }
+
+    logger.success('Successfully added entry to journey index file!');
+    console.log(chalk.blue(`📁 Index file: ${CONFIG.INDEX_FILE_PATH}`));
 }
 
 // AI-powered journey metadata generation
@@ -129,139 +273,69 @@ const baseQuestions: any[] = [
 ];
 
 export async function genIndex() {
-    console.log(chalk.bold.blue('🎯 Journey Index Entry Generator\n'));
-    console.log('This tool generates metadata for new journeys to add to index.json\n');
-
     try {
-        // Run preflight checks
-        const isReady = await openaiUtil.isReady();
-        if (!isReady) {
-            console.error(chalk.red('❌ Preflight checks failed. Please check your configuration.'));
-            return;
-        }
+        // Display header
+        console.log(chalk.bold.blue('🎯 Journey Index Entry Generator\n'));
+        console.log('This tool generates metadata for new journeys to add to index.json\n');
 
-        // Read existing journeys to get department options
+        // Step 1: Preflight checks
+        await performPreflightChecks();
+
+        // Step 2: Read existing index data
         const existingJourneys = await readIndexFile();
         const existingDepartments = getUniqueDepartments(existingJourneys);
 
         logger.info(`Loaded ${existingDepartments.length} existing departments from index`);
 
-        // Create dynamic department choices
-        const departmentChoices = [
-            ...existingDepartments.map(dept => ({
-                name: `${dept.name} (${dept.slug})`,
-                value: dept.slug,
-                short: dept.slug
-            })),
-            {
-                name: '➕ Create new department',
-                value: '__create_new__',
-                short: 'new'
-            }
-        ];
+        // Step 3: Collect user input
+        const userInput = await collectUserInput(existingDepartments);
 
-        // Ask questions interactively
-        const answers = await inquirer.prompt(baseQuestions);
-
-        if (answers.creationMethod === 'ai-assisted') {
-            // Generate journey metadata with AI
-            const metadata = await generateJourneyMetadata(answers.journeyDescription, existingDepartments);
+        // Step 4: Generate metadata with AI
+        if (userInput.creationMethod === 'ai-assisted') {
+            const metadata = await generateJourneyMetadata(userInput.journeyDescription, existingDepartments);
 
             if (!metadata) {
-                console.error(chalk.red('❌ Failed to generate journey metadata'));
-                return;
+                throw new IndexGenerationError('Failed to generate journey metadata', 'AI_GENERATION_FAILED');
             }
 
-            // Create final index entry
+            // Step 5: Create and validate final entry
             const indexEntry: z.infer<typeof IndexEntrySchema> = {
                 ...metadata,
-                enabled: metadata.enabled ?? true, // Default to true if not set
+                enabled: metadata.enabled ?? true,
                 created: new Date().toISOString(),
             };
 
-            // Validate the entry
-            const validatedEntry = IndexEntrySchema.parse(indexEntry);
+            const validatedEntry = validateIndexEntry(indexEntry);
 
-            // Display the results in a nice box
-            const resultDisplay = [
-                `${chalk.cyan('ID:')}          ${validatedEntry.id}`,
-                `${chalk.cyan('Name:')}        ${validatedEntry.name}`,
-                `${chalk.cyan('Description:')} ${validatedEntry.description}`,
-                `${chalk.cyan('Slug:')}        ${validatedEntry.slug}`,
-                `${chalk.cyan('Department:')}  ${validatedEntry.department}`,
-                `${chalk.cyan('Dept Slug:')}   ${validatedEntry.departmentSlug}`,
-                `${chalk.cyan('Type:')}        ${validatedEntry.type}`,
-                `${chalk.cyan('Enabled:')}     ${validatedEntry.enabled}`,
-                `${chalk.cyan('Created:')}     ${validatedEntry.created}`
-            ].join('\n');
+            // Step 6: Display results
+            displayGeneratedEntry(validatedEntry);
 
-            console.log(boxen(
-                resultDisplay,
-                {
-                    padding: 1,
-                    margin: 1,
-                    borderStyle: 'round',
-                    borderColor: 'green',
-                    title: '📋 Journey Metadata',
-                    titleAlignment: 'center'
-                }
-            ));
-
-            // Ask if they want to save
-            const { saveEntry } = await inquirer.prompt([
-                {
-                    type: 'confirm',
-                    name: 'saveEntry',
-                    message: 'Save this entry to the journey index?',
-                    default: true
-                }
-            ]);
-
-            if (!saveEntry) {
+            // Step 7: Confirm save
+            const shouldSave = await confirmSave();
+            if (!shouldSave) {
                 console.log(chalk.yellow('❌ Entry not saved.'));
                 return;
             }
 
-            // Save to UI directory index file
-            const indexFilePath = '../playwright-poc-ui/static/journeys/index.json';
-
-            // Read existing index file
-            logger.info('Reading existing journey index file...');
-            const readResult = await fileManager.readFile(indexFilePath);
-            if (!readResult.success) {
-                console.error(chalk.red('❌ Failed to read existing index file:'), readResult.error);
-                return;
-            }
-
-            const indexData = JSON.parse(readResult.data as string);
-
-            // Check if journey with this ID already exists
-            const existingJourney = indexData.journeys.find((j: any) => j.id === validatedEntry.id);
-            if (existingJourney) {
-                console.log(chalk.yellow(`⚠️  Journey with ID '${validatedEntry.id}' already exists in index. Skipping.`));
-                return;
-            }
-
-            // Add new journey
-            indexData.journeys.push(validatedEntry);
-
-            // Write updated index back to file
-            logger.info('Updating journey index file...');
-            const writeResult = await fileManager.writeFile(indexFilePath, JSON.stringify(indexData, null, 2));
-
-            if (writeResult.success) {
-                console.log(chalk.green('✅ Successfully added entry to journey index file!'));
-                console.log(chalk.blue(`📁 Index file: ${indexFilePath}`));
-            } else {
-                console.error(chalk.red('❌ Failed to update index file:'), writeResult.error);
-                return;
-            }
+            // Step 8: Save to index
+            await saveIndexEntry(validatedEntry, existingJourneys);
 
             console.log(chalk.green('\n🎉 Journey index entry generation completed successfully!'));
         }
 
     } catch (error) {
-        console.error(chalk.red('❌ Error during index entry generation:'), error);
+        const errorMessage = error instanceof IndexGenerationError
+            ? `${error.name}: ${error.message}`
+            : `Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+        console.error(chalk.red('❌ Error during index entry generation:'), errorMessage);
+
+        // Log additional context for debugging
+        if (error instanceof IndexGenerationError) {
+            logger.error(`Error code: ${error.code}`);
+        }
+
+        throw error; // Re-throw for external error handling
     }
 }
 
