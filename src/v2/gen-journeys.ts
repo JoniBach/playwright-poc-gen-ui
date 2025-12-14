@@ -1,9 +1,9 @@
-// The purpose of this file is to take an index record and generate the full journey file
+// The purpose of this file is to generate full journey JSON configurations from index entries
 
 import { z } from 'zod';
 import OpenAI from 'openai';
 import { zodResponseFormat } from 'openai/helpers/zod';
-import { validateJourney, displayValidationResults, autoFixJourney } from '../shared/journey-validator.js';
+import { validateJourney, displayValidationResults, autoFixJourney } from './validation/index.js';
 import { openaiUtil } from './openai-util.js';
 import { Logger } from './logger.js';
 import { fileManager } from './file-manager.js';
@@ -12,6 +12,8 @@ import boxen from 'boxen';
 import chalk from 'chalk';
 import fs from 'fs';
 import path from 'path';
+import { ComponentSchema } from './schemas/component.js';
+import { JourneySchema, JourneySchemaForAI, JourneyJson } from './schemas/journey.js';
 
 // Get logger instance
 const logger = Logger.getInstance();
@@ -42,154 +44,9 @@ class FileOperationError extends JourneyGenerationError {
     }
 }
 
-// Journey schema for AI generation (simplified version based on existing journeys)
-const ComponentSchema = z.discriminatedUnion('type', [
-    z.object({
-        type: z.literal('heading'),
-        id: z.string(),
-        props: z.object({
-            text: z.string(),
-            size: z.enum(['s', 'm', 'l', 'xl']).nullable().optional(),
-        }),
-    }),
-    z.object({
-        type: z.literal('paragraph'),
-        id: z.string(),
-        props: z.object({
-            text: z.string(),
-        }),
-    }),
-    z.object({
-        type: z.literal('textInput'),
-        id: z.string(),
-        props: z.object({
-            id: z.string(), // Required by UI schema
-            name: z.string(),
-            label: z.string(),
-            hint: z.string().nullable().optional(),
-            value: z.string().nullable().optional(),
-            type: z.enum(['text', 'email', 'tel', 'number']).nullable().optional(),
-            autocomplete: z.string().nullable().optional(),
-            width: z.enum(['5', '10', '20', '30', 'full']).nullable().optional(),
-            disabled: z.boolean().nullable().optional(),
-            readonly: z.boolean().nullable().optional(),
-            spellcheck: z.boolean().nullable().optional(),
-        }),
-    }),
-    z.object({
-        type: z.literal('radios'),
-        id: z.string(),
-        props: z.object({
-            id: z.string(),
-            name: z.string(),
-            legend: z.string(),
-            hint: z.string().nullable().optional(),
-            items: z.array(z.object({
-                value: z.string(),
-                text: z.string(),
-                hint: z.string().nullable().optional(),
-                checked: z.boolean().nullable().optional(),
-                disabled: z.boolean().nullable().optional(),
-            })),
-        }),
-    }),
-    z.object({
-        type: z.literal('checkboxes'),
-        id: z.string(),
-        props: z.object({
-            id: z.string(),
-            name: z.string(),
-            legend: z.string(),
-            hint: z.string().nullable().optional(),
-            items: z.array(z.object({
-                value: z.string(),
-                text: z.string(),
-                hint: z.string().nullable().optional(),
-                checked: z.boolean().nullable().optional(),
-                disabled: z.boolean().nullable().optional(),
-            })),
-        }),
-    }),
-    z.object({
-        type: z.literal('button'),
-        id: z.string(),
-        props: z.object({
-            text: z.string(),
-            href: z.string().nullable().optional(),
-        }),
-    }),
-    z.object({
-        type: z.literal('insetText'),
-        id: z.string(),
-        props: z.object({
-            text: z.string(),
-        }),
-    }),
-    z.object({
-        type: z.literal('warningText'),
-        id: z.string(),
-        props: z.object({
-            content: z.string(), // UI schema uses 'content', not 'text'
-            iconFallbackText: z.string().nullable().optional(),
-        }),
-    }),
-]);
-
-const JourneyPageSchema = z.object({
-    id: z.string(),
-    title: z.string(),
-    components: z.array(ComponentSchema),
-    nextPage: z.string().nullable().optional(),
-    previousPage: z.string().nullable().optional(),
-});
-
-const LandingPageSectionSchema = z.object({
-    type: z.enum(['paragraph', 'heading', 'list', 'insetText', 'warningText', 'details']),
-    content: z.union([z.string(), z.array(z.string())]),
-    level: z.enum(['s', 'm', 'l', 'xl']).nullable().optional(),
-    summary: z.string().nullable().optional(),
-    listType: z.enum(['bullet', 'number']).nullable().optional(),
-});
-
-const LandingPageSchema = z.object({
-    title: z.string(),
-    lead: z.string(),
-    sections: z.array(LandingPageSectionSchema),
-    startButtonText: z.string().nullable().optional(),
-    startButtonHref: z.string(),
-});
-
-// For OpenAI structured outputs, we need to use an array instead of a record
-const JourneyPageWithIdSchema = z.object({
-    id: z.string(),
-    title: z.string(),
-    components: z.array(ComponentSchema),
-    nextPage: z.string().nullable().optional(),
-    previousPage: z.string().nullable().optional(),
-});
-
-const JourneySchemaForAI = z.object({
-    id: z.string(),
-    name: z.string(),
-    landingPage: LandingPageSchema.nullable().optional(),
-    startPage: z.string(),
-    pages: z.array(JourneyPageWithIdSchema), // Array instead of record for OpenAI
-    checkYourAnswersPage: z.string().nullable().optional(),
-    completionPage: z.string().nullable().optional(),
-});
-
-// Final schema with record for actual use
-const JourneySchema = z.object({
-    id: z.string(),
-    name: z.string(),
-    landingPage: LandingPageSchema.nullable().optional(),
-    startPage: z.string(),
-    pages: z.record(z.string(), JourneyPageSchema),
-    checkYourAnswersPage: z.string().nullable().optional(),
-    completionPage: z.string().nullable().optional(),
-});
-
-export type JourneyJson = z.infer<typeof JourneySchema>;
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
 
 // Helper function to clean up empty strings and null values from optional fields
 function cleanupOptionalFields(obj: any): any {
@@ -223,6 +80,8 @@ export interface GenerateJourneyOptions {
     prompt?: string;
     department?: string;
 }
+
+// Function to read index file and get available entries
 async function readIndexFile(): Promise<any[]> {
     try {
         const readResult = await fileManager.readFile(CONFIG.INDEX_FILE_PATH);
@@ -281,7 +140,7 @@ async function generateJourneyWithAI(indexEntry: any): Promise<JourneyJson | nul
     }
     console.log('');
 
-    try {
+  try {
         const completion = await client.beta.chat.completions.parse({
             model: process.env.OPENAI_MODEL || 'gpt-4o-2024-08-06',
             messages: [
@@ -363,9 +222,10 @@ Example Flow:
         const message = completion.choices[0]?.message;
 
         if (message?.parsed) {
+            logger.info('AI successfully generated journey structure');
             // Ensure the ID matches what was requested
             if (message.parsed.id !== indexEntry.id) {
-                console.warn(`⚠️  Warning: Generated ID "${message.parsed.id}" doesn't match requested ID "${indexEntry.id}". Fixing...`);
+                logger.warn(`Generated ID "${message.parsed.id}" doesn't match requested ID "${indexEntry.id}". Fixing...`);
                 message.parsed.id = indexEntry.id;
             }
 
@@ -391,13 +251,13 @@ Example Flow:
             let cleanedJourney = cleanupOptionalFields(journey) as JourneyJson;
 
             // POST-PROCESSING: Fix common AI mistakes BEFORE validation
-            console.log('\n🔧 Post-processing journey...\n');
+            logger.info('Post-processing journey...');
             
             // 1. Fix startButtonHref if it's wrong
             if (cleanedJourney.landingPage?.startButtonHref) {
                 const correctHref = `/${indexEntry.department?.toLowerCase().replace(/\s+/g, '-').replace(/[()]/g, '') || 'unknown'}/${indexEntry.id}/apply`;
                 if (cleanedJourney.landingPage.startButtonHref !== correctHref) {
-                    console.log(`⚠️  Fixing startButtonHref: "${cleanedJourney.landingPage.startButtonHref}" → "${correctHref}"`);
+                    logger.warn(`Fixing startButtonHref: "${cleanedJourney.landingPage.startButtonHref}" → "${correctHref}"`);
                     cleanedJourney.landingPage.startButtonHref = correctHref;
                 }
             }
@@ -411,27 +271,26 @@ Example Flow:
                 const removed = originalLength - page.components.length;
                 if (removed > 0) {
                     buttonCount += removed;
-                    console.log(`⚠️  Removed ${removed} button(s) from page: ${pageId}`);
+                    logger.warn(`Removed ${removed} button(s) from page: ${pageId}`);
                 }
             });
             
             if (buttonCount > 0) {
-                console.log(`✅ Removed ${buttonCount} button component(s) total\n`);
+                logger.info(`Removed ${buttonCount} button component(s) total`);
             }
 
             // Validate the journey against UI schema requirements
-            console.log('🔍 Validating generated journey...\n');
+            logger.info('Validating generated journey...');
             let validationResult = validateJourney(cleanedJourney);
             
             // If validation fails, attempt auto-fix
             if (!validationResult.valid) {
-                console.log('⚠️  Validation errors found. Attempting auto-fix...\n');
+                logger.warn('Validation errors found. Attempting auto-fix...');
                 const { fixed, changes } = autoFixJourney(cleanedJourney);
                 
                 if (changes.length > 0) {
-                    console.log('🔧 Auto-fix applied the following changes:');
-                    changes.forEach(change => console.log(`   - ${change}`));
-                    console.log('');
+                    logger.info('Auto-fix applied the following changes:');
+                    changes.forEach(change => logger.info(`   - ${change}`));
                     
                     cleanedJourney = fixed;
                     
@@ -445,28 +304,51 @@ Example Flow:
             
             // If still invalid after auto-fix, warn user
             if (!validationResult.valid) {
-                console.warn('⚠️  WARNING: Journey still has validation errors after auto-fix.');
-                console.warn('   The journey may not work correctly in the UI.');
-                console.warn('   Please review the errors above and fix manually if needed.\n');
+                logger.warn('WARNING: Journey still has validation errors after auto-fix.');
+                logger.warn('   The journey may not work correctly in the UI.');
+                logger.warn('   Please review the errors above and fix manually if needed.');
             }
 
             return cleanedJourney;
         } else if (message?.refusal) {
-            console.error('❌ Request was refused:', message.refusal);
+            logger.error('AI refused the request:', message.refusal);
+            logger.error('This usually means the prompt or schema is too complex for the model');
             return null;
         } else {
-            console.error('❌ No response received');
+            logger.error('AI did not return a valid structured response');
+            logger.error('This could be due to:');
+            logger.error('1. Schema too complex for the model');
+            logger.error('2. Prompt too long or confusing');
+            logger.error('3. Model limitations with structured outputs');
+
+            // Log more details about the response
+            if (message) {
+                logger.error('Message object exists but no parsed content');
+                if (message.content) {
+                    logger.error('Raw content length:', message.content.length);
+                    // Log first 500 characters of content for debugging
+                    logger.error('Raw content preview:', message.content.substring(0, 500));
+                } else {
+                    logger.error('No content in message');
+                }
+            } else {
+                logger.error('No message object returned from AI');
+            }
             return null;
         }
     } catch (error) {
         if (error instanceof Error) {
-            console.error('❌ Error:', error.message);
+            logger.error('Error:', error.message);
         } else {
-            console.error('❌ Unknown error occurred');
+            logger.error('Unknown error occurred');
         }
         return null;
     }
 }
+
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
 
 // Function to save generated journey
 async function saveJourney(journey: JourneyJson): Promise<void> {
@@ -485,7 +367,7 @@ async function saveJourney(journey: JourneyJson): Promise<void> {
         ]);
 
         if (!overwrite) {
-            console.log(chalk.yellow('Journey generation cancelled.'));
+            logger.info('Journey generation cancelled.');
             return;
         }
     }
@@ -495,16 +377,16 @@ async function saveJourney(journey: JourneyJson): Promise<void> {
         throw new FileOperationError(`Failed to save journey: ${writeResult.error}`);
     }
 
-    console.log(chalk.green('✅ Journey saved successfully!'));
-    console.log(chalk.blue(`📁 File: ${journeyFilePath}`));
+    logger.success('Journey saved successfully!');
+    logger.info(`File: ${journeyFilePath}`);
 }
 
 // Main journey generation function
 export async function genJourneys() {
     try {
         // Display header
-        console.log(chalk.bold.blue('🚀 Journey Generation from Index Entry\n'));
-        console.log('This tool generates complete journey JSON from a selected index entry\n');
+        logger.info('Journey Generation from Index Entry');
+        logger.info('This tool generates complete journey JSON from a selected index entry');
 
         // Step 1: Preflight checks
         const isReady = await openaiUtil.isReady();
@@ -521,10 +403,10 @@ export async function genJourneys() {
         // Step 3: Let user select index entry
         const selectedEntry = await selectIndexEntry(indexEntries);
 
-        console.log(chalk.cyan(`\n📋 Selected: ${selectedEntry.name}`));
-        console.log(chalk.gray(`   ${selectedEntry.description}`));
-        console.log(chalk.gray(`   Department: ${selectedEntry.department}`));
-        console.log(chalk.gray(`   Type: ${selectedEntry.type}\n`));
+        logger.info(`Selected: ${selectedEntry.name}`);
+        logger.info(`${selectedEntry.description}`);
+        logger.info(`Department: ${selectedEntry.department}`);
+        logger.info(`Type: ${selectedEntry.type}`);
 
         // Step 4: Generate journey with AI
         const journey = await generateJourneyWithAI(selectedEntry);
@@ -569,21 +451,21 @@ export async function genJourneys() {
         ]);
 
         if (!shouldSave) {
-            console.log(chalk.yellow('❌ Journey not saved.'));
+            logger.info('Journey not saved.');
             return;
         }
 
         // Step 8: Save journey
         await saveJourney(validatedJourney);
 
-        console.log(chalk.green('\n🎉 Journey generation completed successfully!'));
+        logger.success('Journey generation completed successfully!');
 
     } catch (error) {
         const errorMessage = error instanceof JourneyGenerationError
             ? `${error.name}: ${error.message}`
             : `Unexpected error: ${error instanceof Error ? error.message : 'Unknown error'}`;
 
-        console.error(chalk.red('❌ Error during journey generation:'), errorMessage);
+        logger.error('Error during journey generation:', errorMessage);
 
         // Log additional context for debugging
         if (error instanceof JourneyGenerationError) {
@@ -593,6 +475,10 @@ export async function genJourneys() {
         throw error;
     }
 }
+
+// =============================================================================
+// MAIN EXECUTION
+// =============================================================================
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
