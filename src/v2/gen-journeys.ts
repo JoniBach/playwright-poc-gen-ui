@@ -253,16 +253,29 @@ Example Flow:
             // POST-PROCESSING: Fix common AI mistakes BEFORE validation
             logger.info('Post-processing journey...');
             
-            // 1. Fix startButtonHref if it's wrong
+            // 1. Ensure journey ID matches the index entry ID exactly
+            if (cleanedJourney.id !== indexEntry.id) {
+                logger.warn(`Fixing journey ID: "${cleanedJourney.id}" → "${indexEntry.id}"`);
+                cleanedJourney.id = indexEntry.id;
+            }
+            
+            // 2. Ensure journey name matches the index entry name exactly
+            if (cleanedJourney.name !== indexEntry.name) {
+                logger.warn(`Fixing journey name: "${cleanedJourney.name}" → "${indexEntry.name}"`);
+                cleanedJourney.name = indexEntry.name;
+            }
+            
+            // 3. Fix startButtonHref if it's wrong
             if (cleanedJourney.landingPage?.startButtonHref) {
-                const correctHref = `/${indexEntry.department?.toLowerCase().replace(/\s+/g, '-').replace(/[()]/g, '') || 'unknown'}/${indexEntry.id}/apply`;
+                // Use the exact departmentSlug from the index entry
+                const correctHref = `/${indexEntry.departmentSlug || 'unknown'}/${indexEntry.id}/apply`;
                 if (cleanedJourney.landingPage.startButtonHref !== correctHref) {
                     logger.warn(`Fixing startButtonHref: "${cleanedJourney.landingPage.startButtonHref}" → "${correctHref}"`);
                     cleanedJourney.landingPage.startButtonHref = correctHref;
                 }
             }
             
-            // 2. Remove button components (navigation is automatic)
+            // 4. Remove button components (navigation is automatic)
             let buttonCount = 0;
             Object.keys(cleanedJourney.pages).forEach(pageId => {
                 const page = cleanedJourney.pages[pageId];
@@ -278,6 +291,28 @@ Example Flow:
             if (buttonCount > 0) {
                 logger.info(`Removed ${buttonCount} button component(s) total`);
             }
+            
+            // 5. Ensure all URLs and paths use the correct slugs
+            const correctJourneyId = indexEntry.id;
+            const correctDeptSlug = indexEntry.departmentSlug || 'unknown';
+            
+            // Check for URLs in components that might reference the journey
+            Object.keys(cleanedJourney.pages).forEach(pageId => {
+                const page = cleanedJourney.pages[pageId];
+                page.components.forEach((component: any) => {
+                    // Fix URLs in links, buttons, etc.
+                    if (component.props && component.props.href) {
+                        const href = component.props.href;
+                        if (href.includes('/apply') || href.includes('/start')) {
+                            const correctHref = `/${correctDeptSlug}/${correctJourneyId}/apply`;
+                            if (href !== correctHref) {
+                                logger.warn(`Fixing component href: "${href}" → "${correctHref}"`);
+                                component.props.href = correctHref;
+                            }
+                        }
+                    }
+                });
+            });
 
             // Validate the journey against UI schema requirements
             logger.info('Validating generated journey...');

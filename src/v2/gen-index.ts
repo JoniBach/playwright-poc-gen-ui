@@ -99,25 +99,13 @@ function generateDepartmentSlug(departmentName: string): string {
 
 // User input collection function
 async function collectUserInput(existingDepartments: Array<{name: string, value: string, slug: string}>): Promise<{ creationMethod: string; journeyDescription: string }> {
-    const baseQuestions: any[] = [
-        {
-            type: 'list',
-            name: 'creationMethod',
-            message: 'How would you like to create the journey metadata?',
-            choices: [
-                {
-                    name: '🤖 AI-assisted (describe journey, AI generates metadata)',
-                    value: 'ai-assisted',
-                    short: 'AI-assisted'
-                }
-            ]
-        },
+    // Skip the creation method question and default to AI-assisted mode
+    const questions: any[] = [
         {
             type: 'input',
             name: 'journeyDescription',
             message: 'Describe the journey you want to create:',
             default: CONFIG.DEFAULT_JOURNEY_DESCRIPTION,
-            when: (answers: any) => answers.creationMethod === 'ai-assisted',
             validate: (input: string) => {
                 if (input.trim().length < CONFIG.MIN_DESCRIPTION_LENGTH) {
                     return `Please provide a more detailed description (at least ${CONFIG.MIN_DESCRIPTION_LENGTH} characters)`;
@@ -127,8 +115,12 @@ async function collectUserInput(existingDepartments: Array<{name: string, value:
         }
     ];
 
-    const result = await inquirer.prompt(baseQuestions);
-    return result as { creationMethod: string; journeyDescription: string };
+    const result = await inquirer.prompt(questions);
+    // Always set creationMethod to 'ai-assisted'
+    return { 
+        creationMethod: 'ai-assisted', 
+        journeyDescription: result.journeyDescription 
+    };
 }
 
 // Entry validation function

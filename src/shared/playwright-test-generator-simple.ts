@@ -37,8 +37,42 @@ export function generatePlaywrightTestsSimple(
   // Test suite
   lines.push(`test.describe('${analysis.journeyName || analysis.journeyId}', () => {`);
   // Extract journey path from the journey configuration
-  console.log('DEBUG journey object:', JSON.stringify(journey, null, 2));
-  const journeyPath = journey?.landingPage?.startButtonHref || `/${journey?.departmentSlug || 'department-for-business-and-trade'}/${analysis.journeyId}/apply`;
+  // Use the correct slugs from the index entry
+  let journeyPath;
+  
+  // First try to get the path from the landing page
+  if (journey?.landingPage?.startButtonHref) {
+    journeyPath = journey.landingPage.startButtonHref;
+  } 
+  // Next, try to construct it from departmentSlug and journeyId
+  else if (journey?.departmentSlug) {
+    journeyPath = `/${journey.departmentSlug}/${journey.id}/apply`;
+  }
+  // If we still don't have a path, check if we have an index entry
+  else {
+    // Try to load the index file to get the correct slugs
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const indexPath = path.resolve(process.cwd(), '../playwright-poc-ui/static/journeys/index.json');
+      
+      if (fs.existsSync(indexPath)) {
+        const indexData = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+        const indexEntry = indexData.journeys?.find((j: any) => j.id === analysis.journeyId);
+        
+        if (indexEntry) {
+          journeyPath = `/${indexEntry.departmentSlug || 'unknown'}/${indexEntry.id}/apply`;
+        }
+      }
+    } catch (error) {
+      console.error('Error loading index file:', error);
+    }
+  }
+  
+  // Fallback if all else fails
+  if (!journeyPath) {
+    journeyPath = `/unknown/${analysis.journeyId}/apply`;
+  }
   lines.push(`  const JOURNEY_PATH = '${journeyPath}';`);
   lines.push('');
 

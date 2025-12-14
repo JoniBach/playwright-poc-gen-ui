@@ -229,158 +229,51 @@ export async function genStories() {
 
     console.log(`📚 Found ${journeyFiles.length} journeys\n`);
 
-    // Interactive selection
-    const answers = await inquirer.prompt([
-        {
-            type: 'list',
-            name: 'action',
-            message: 'What would you like to do?',
-            choices: [
-                { name: '📄 Generate stories for a single journey', value: 'single' },
-                { name: '📚 Generate stories for multiple journeys', value: 'multiple' },
-                { name: '🌍 Generate stories for ALL journeys', value: 'all' }
-            ]
-        },
+    // Interactive selection - simplified to only journey selection and format
+    const answers: {
+        journey: string;
+        format: string;
+    } = await inquirer.prompt([
         {
             type: 'list',
             name: 'journey',
             message: 'Select a journey:',
-            choices: journeyFiles.map(j => ({ name: j, value: j })),
-            when: (answers) => answers.action === 'single'
-        },
-        {
-            type: 'checkbox',
-            name: 'journeys',
-            message: 'Select journeys (use space to select, enter to confirm):',
-            choices: journeyFiles.map(j => ({ name: j, value: j })),
-            when: (answers) => answers.action === 'multiple',
-            validate: (input) => {
-                if (input.length === 0) {
-                    return 'Please select at least one journey';
-                }
-                return true;
-            }
+            choices: journeyFiles.map(j => ({ name: j, value: j }))
         },
         {
             type: 'list',
             name: 'format',
             message: 'Select output format:',
             choices: [
+                { name: '📊 JSON - Structured data format', value: 'json' },
                 { name: '📝 Markdown - Rich documentation format', value: 'markdown' },
                 { name: '🥒 Gherkin - BDD feature files', value: 'gherkin' },
                 { name: '🧪 Playwright - Test stubs for automation', value: 'playwright' },
-                { name: '📊 JSON - Structured data format', value: 'json' },
                 { name: '📈 CSV - Spreadsheet/Jira import', value: 'csv' }
-            ]
-        },
-        {
-            type: 'list',
-            name: 'output',
-            message: 'Where should the files be saved?',
-            choices: [
-                {
-                    name: '📁 Default (playwright-poc-qa/stories/[format])',
-                    value: 'default'
-                },
-                {
-                    name: '📂 Custom directory',
-                    value: 'custom'
-                }
-            ]
-        },
-        {
-            type: 'input',
-            name: 'customPath',
-            message: 'Enter custom output directory (relative to playwright-poc-qa):',
-            when: (answers) => answers.output === 'custom',
-            validate: (input) => {
-                if (!input || input.trim() === '') {
-                    return 'Please enter a directory path';
-                }
-                return true;
-            }
-        },
-        {
-            type: 'confirm',
-            name: 'aiEnabled',
-            message: 'Use AI-enhanced generation?',
-            default: !!process.env.OPENAI_API_KEY
+            ],
+            default: 'json'
         }
     ]);
 
-    // Build command arguments
-    let command = 'npm run generate:stories --';
-
-    // Add journey selection
-    if (answers.action === 'all') {
-        command += ' --all';
-        console.log('\n🚀 Starting story generation...\n');
-        for (const journey of answers.journeys) {
-            console.log(`\n📖 Processing: ${journey}`);
-
-            try {
-                await generateStoriesForJourney(journey, answers.format, answers.output === 'custom' ? answers.customPath : answers.format, !answers.aiEnabled);
-                console.log(`✅ ${journey} complete`);
-            } catch (error) {
-                console.error(`❌ ${journey} failed:`, error);
-            }
-        }
-        console.log('\n✨ All journeys processed!\n');
-        return;
-    }
-
-    // For single journey or all journeys, call directly
-    const options = {
-        journey: answers.action === 'single' ? answers.journey : undefined,
-        all: answers.action === 'all',
-        format: answers.format,
-        output: answers.output === 'custom' ? answers.customPath : answers.format,
-        skipStories: !answers.aiEnabled
-    };
-
-    // Show summary
+    // Show simplified summary
     console.log('\n╔═══════════════════════════════════════════════════════════════╗');
     console.log('║                    Generation Summary                         ║');
     console.log('╚═══════════════════════════════════════════════════════════════╝');
-    console.log(`\n📋 Action: ${answers.action === 'all' ? 'All journeys' : 'Selected journey'}`);
-    if (answers.action === 'single') {
-        console.log(`📄 Journey: ${answers.journey}`);
-    }
+    console.log(`\n📄 Journey: ${answers.journey}`);
     console.log(`📝 Format: ${answers.format}`);
-    console.log(`📁 Output: playwright-poc-qa/stories/${options.output}/`);
-    console.log(`🤖 AI: ${answers.aiEnabled ? 'Enabled' : 'Disabled'}`);
-
-    const { confirm } = await inquirer.prompt({
-        type: 'confirm',
-        name: 'confirm',
-        message: '\nProceed with generation?',
-        default: true
-    });
-
-    if (!confirm) {
-        console.log('\n❌ Generation cancelled\n');
-        return;
-    }
-
-    // Execute generation directly
+    console.log(`📁 Output: playwright-poc-qa/stories/${answers.format}/`);
+    
+    // Execute generation directly without confirmation
     console.log('\n🚀 Starting story generation...\n');
 
     try {
-        if (options.all) {
-            // Generate for all journeys
-            const journeyIds = getAllJourneyIds(journeysPath);
-            console.log(`\n📚 Processing ${journeyIds.length} journeys...\n`);
-
-            for (const journeyId of journeyIds) {
-                await generateStoriesForJourney(journeyId, options.format, options.output, options.skipStories);
-            }
-
-            console.log('\n✅ All journeys processed successfully!');
-        } else if (options.journey) {
-            // Generate for single journey
-            await generateStoriesForJourney(options.journey, options.format, options.output, options.skipStories);
-        }
-
+        // Generate for single journey with default settings
+        // Always use deterministic generation (no AI)
+        const outputDir = answers.format;
+        const skipAI = true;
+        
+        await generateStoriesForJourney(answers.journey, answers.format, outputDir, skipAI);
+        
         console.log('\n✨ Story generation complete!\n');
     } catch (error) {
         console.error('\n❌ Story generation failed\n');
