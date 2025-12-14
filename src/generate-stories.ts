@@ -232,13 +232,14 @@ async function generateStoriesForJourney(
 
 	// Write output
 	if (options.output) {
-		// Default to QA project's stories directory if output is relative
+		// Default to QA project's tests directory for playwright-full format, stories for others
 		let outputDir: string;
 		if (options.output.startsWith('/') || options.output.startsWith('.')) {
 			outputDir = resolve(options.output);
 		} else {
 			// Relative path - put in QA project
-			outputDir = resolve(process.cwd(), '../playwright-poc-qa/stories', options.output);
+			const defaultDir = options.format === 'playwright-full' ? 'tests' : 'stories';
+			outputDir = resolve(process.cwd(), `../playwright-poc-qa/${defaultDir}`, options.output);
 		}
 		
 		if (!existsSync(outputDir)) {

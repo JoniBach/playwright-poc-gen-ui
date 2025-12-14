@@ -400,14 +400,15 @@ async function handleJourneysCommand(): Promise<void> {
  * Handles the stories generation command
  */
 async function handleStoriesCommand(): Promise<void> {
-  const spinner = createSpinner(MESSAGES.stories.generating).start();
+  // Stories generation is interactive, so don't use spinner
+  console.clear();
 
   try {
     await genStories();
-    spinner.succeed(chalk.green(MESSAGES.stories.success));
-    process.exit(0);
+    // Don't exit here - let genStories handle its own completion
   } catch (error) {
-    handleCommandError(spinner, 'user stories and acceptance criteria', error);
+    console.error(chalk.red('Story generation failed:'), error);
+    process.exit(1);
   }
 }
 
@@ -415,14 +416,15 @@ async function handleStoriesCommand(): Promise<void> {
  * Handles the tests generation command
  */
 async function handleTestsCommand(): Promise<void> {
-  const spinner = createSpinner(MESSAGES.tests.generating).start();
+  // Tests generation is interactive, so don't use spinner
+  console.clear();
 
   try {
     await genTests();
-    spinner.succeed(chalk.green(MESSAGES.tests.success));
-    process.exit(0);
+    // Don't exit here - let genTests handle its own completion
   } catch (error) {
-    handleCommandError(spinner, 'Playwright test files', error);
+    console.error(chalk.red('Test generation failed:'), error);
+    process.exit(1);
   }
 }
 
