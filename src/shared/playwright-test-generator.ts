@@ -141,15 +141,75 @@ function generateAdaptiveHappyPathTest(config: JourneyConfig, stories: JourneySt
 
     if (heading) {
       lines.push(`        // Step ${index + 1}: ${page.id}`);
-      lines.push(`        .addCustomStep(async ({ journeyRunner }) => {`);
+      lines.push(`        .addCustomStep(async ({ page, journeyRunner }) => {`);
       lines.push(`          await journeyRunner.verifyHeading('${heading}');`);
       
       if (fields.length > 0) {
-        lines.push(`          await journeyRunner.fillStep({`);
-        fields.forEach(field => {
-          lines.push(`            '${field.label}': ${generateFieldValue(field)},`);
+        // Group fields by type
+        const radioFields = fields.filter(f => f.type === 'radios');
+        const dateFields = fields.filter(f => f.type === 'dateInput' || f.label.toLowerCase().includes('date of birth'));
+        const otherFields = fields.filter(f => f.type !== 'radios' && f.type !== 'dateInput' && !f.label.toLowerCase().includes('date of birth'));
+        
+        // Handle radio buttons with selectRadio
+        radioFields.forEach(field => {
+          // Use the first option text if available, otherwise use a default value
+          if (field.options && field.options.length > 0) {
+            const optionText = field.options[0].text;
+            lines.push(`          await journeyRunner.selectRadio('${optionText}');`);
+          } else {
+            // Fallback for radio buttons without options
+            lines.push(`          // No options found for radio button ${field.id}, using default value`);
+            lines.push(`          await journeyRunner.selectRadio('Yes');`);
+          }
         });
-        lines.push(`          });`);
+        
+        // Handle date fields with special handling
+        dateFields.forEach(field => {
+          // Check if it's a date of birth field
+          if (field.label.toLowerCase().includes('date of birth') || field.id.toLowerCase().includes('birth')) {
+            lines.push(`          // Handle date of birth field`);
+            // Try to detect if it's a GOV.UK date input component with separate day/month/year fields
+            lines.push(`          try {`);
+            lines.push(`            // First try to find separate day/month/year fields`);
+            lines.push(`            const dayField = page.locator(\`#${field.id}-day, input[id*='-day']\`).first();`);
+            lines.push(`            const monthField = page.locator(\`#${field.id}-month, input[id*='-month']\`).first();`);
+            lines.push(`            const yearField = page.locator(\`#${field.id}-year, input[id*='-year']\`).first();`);
+            lines.push(`            `);
+            lines.push(`            // Check if the fields exist`);
+            lines.push(`            const dayExists = await dayField.count() > 0;`);
+            lines.push(`            `);
+            lines.push(`            if (dayExists) {`);
+            lines.push(`              // Fill the separate fields`);
+            lines.push(`              await dayField.fill('01');`);
+            lines.push(`              await monthField.fill('01');`);
+            lines.push(`              await yearField.fill('2000');`);
+            lines.push(`            } else {`);
+            lines.push(`              // Fall back to single field`);
+            lines.push(`              await page.locator('#${field.id}').fill('01 01 2000');`);
+            lines.push(`            }`);
+            lines.push(`          } catch (error) {`);
+            lines.push(`            // If all else fails, try the standard approach`);
+            lines.push(`            await journeyRunner.fillStep({`);
+            lines.push(`              '${field.label}': '01 01 2000'`);
+            lines.push(`            });`);
+            lines.push(`          }`);
+          } else {
+            // Regular date field
+            lines.push(`          // Fill date field`);
+            lines.push(`          await journeyRunner.fillStep({`);
+            lines.push(`            '${field.label}': '01 01 2024'`);
+            lines.push(`          });`);
+          }
+        });
+        
+        // Handle other fields with fillStep
+        if (otherFields.length > 0) {
+          lines.push(`          await journeyRunner.fillStep({`);
+          otherFields.forEach(field => {
+            lines.push(`            '${field.label}': ${generateFieldValue(field)},`);
+          });
+          lines.push(`          });`);
+        }
       }
       
       lines.push(`          await journeyRunner.continue();`);
@@ -247,8 +307,8 @@ function generateValidationTests(config: JourneyConfig, testStyle: string): stri
   const lines: string[] = [];
 
   // Find pages with required fields
-  const pagesWithValidation = config.pages.filter(page => 
-    page.components.some(c => c.type === 'textInput' && (c as any).props?.validation?.required)
+  const pagesWithValidation = config.pages.filter((page: any) => 
+    page.components.some((c: any) => c.type === 'textInput' && c.props?.validation?.required)
   );
 
   if (pagesWithValidation.length === 0) {
@@ -257,11 +317,11 @@ function generateValidationTests(config: JourneyConfig, testStyle: string): stri
     return lines;
   }
 
-  pagesWithValidation.forEach(page => {
+  pagesWithValidation.forEach((page: any) => {
     const heading = extractHeading(page);
     const requiredFields = page.components
-      .filter(c => c.type === 'textInput' && (c as any).props?.validation?.required)
-      .map(c => (c as any).props?.label || 'field');
+      .filter((c: any) => c.type === 'textInput' && c.props?.validation?.required)
+      .map((c: any) => c.props?.label || 'field');
 
     if (heading && requiredFields.length > 0) {
       lines.push(`    test('should validate required fields on ${page.id} @journey @validation', async ({`);
@@ -282,7 +342,7 @@ function generateValidationTests(config: JourneyConfig, testStyle: string): stri
         lines.push(`      const builder = new JourneyBuilder(page, journeyRunner, componentHelper);`);
         lines.push(`      await builder`);
         lines.push(`        .addStep(AdaptiveBlocks.smartVerifyErrors([`);
-        requiredFields.forEach(field => {
+        requiredFields.forEach((field: string) => {
           lines.push(`          '${field} is required',`);
         });
         lines.push(`        ]))`);
@@ -325,20 +385,32 @@ function extractHeading(page: any): string | null {
 /**
  * Extract form fields from page
  */
-function extractFields(page: any): Array<{ label: string; type: string; id: string }> {
+function extractFields(page: any): Array<{ label: string; type: string; id: string; options?: Array<{text: string; value: string}> }> {
   return page.components
-    .filter((c: any) => ['textInput', 'radios', 'checkboxes', 'select'].includes(c.type))
-    .map((c: any) => ({
-      label: c.props?.label || c.props?.legend || c.id,
-      type: c.type,
-      id: c.id
-    }));
+    .filter((c: any) => ['textInput', 'radios', 'checkboxes', 'select', 'dateInput'].includes(c.type))
+    .map((c: any) => {
+      // Extract options for radio buttons, checkboxes, and selects
+      let options;
+      if (['radios', 'checkboxes', 'select'].includes(c.type) && c.props?.items) {
+        options = c.props.items.map((item: any) => ({
+          text: item.text,
+          value: item.value
+        }));
+      }
+      
+      return {
+        label: c.props?.label || c.props?.legend || c.id,
+        type: c.type,
+        id: c.id,
+        options
+      };
+    });
 }
 
 /**
  * Generate appropriate test value for field
  */
-function generateFieldValue(field: { label: string; type: string; id: string }): string {
+function generateFieldValue(field: { label: string; type: string; id: string; options?: Array<{text: string; value: string}> }): string {
   const label = field.label.toLowerCase();
 
   // Email fields
@@ -365,17 +437,20 @@ function generateFieldValue(field: { label: string; type: string; id: string }):
     return "'London'";
   }
   if (label.includes('postcode') || label.includes('zip')) {
-    return "'SW1A 1AA'";
+    return 'testPostcode';
   }
 
   // Phone fields
   if (label.includes('phone') || label.includes('telephone')) {
-    return 'contactData.phone';
+    return "'07700 900123'";
   }
 
   // Date fields
+  if (label.includes('date of birth') || label.includes('dob')) {
+    return "'01 01 2000'";
+  }
   if (label.includes('date')) {
-    return "'01/01/2024'";
+    return "'01 01 2024'";
   }
 
   // Number fields
@@ -383,9 +458,18 @@ function generateFieldValue(field: { label: string; type: string; id: string }):
     return "'100'";
   }
 
-  // Boolean/radio fields
-  if (field.type === 'radios') {
-    return "'Yes'"; // Default to first option
+  // Radio buttons - use the first option value if available
+  if (field.type === 'radios' && field.options && field.options.length > 0) {
+    return `'${field.options[0].value}'`;
+  }
+
+  // Checkbox fields - use the first two option values if available
+  if (field.type === 'checkboxes') {
+    if (field.options && field.options.length > 0) {
+      const values = field.options.slice(0, Math.min(2, field.options.length)).map(opt => `'${opt.value}'`);
+      return `[${values.join(', ')}]`;
+    }
+    return "['Option 1', 'Option 2']";
   }
 
   // Default

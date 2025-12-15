@@ -267,8 +267,8 @@ Example Flow:
             
             // 3. Fix startButtonHref if it's wrong
             if (cleanedJourney.landingPage?.startButtonHref) {
-                // Use the exact departmentSlug from the index entry
-                const correctHref = `/${indexEntry.departmentSlug || 'unknown'}/${indexEntry.id}/apply`;
+                // Use the exact departmentSlug and slug from the index entry
+                const correctHref = `/${indexEntry.departmentSlug || 'unknown'}/${indexEntry.slug || indexEntry.id}/apply`;
                 if (cleanedJourney.landingPage.startButtonHref !== correctHref) {
                     logger.warn(`Fixing startButtonHref: "${cleanedJourney.landingPage.startButtonHref}" → "${correctHref}"`);
                     cleanedJourney.landingPage.startButtonHref = correctHref;
@@ -293,7 +293,7 @@ Example Flow:
             }
             
             // 5. Ensure all URLs and paths use the correct slugs
-            const correctJourneyId = indexEntry.id;
+            const correctJourneySlug = indexEntry.slug || indexEntry.id;
             const correctDeptSlug = indexEntry.departmentSlug || 'unknown';
             
             // Check for URLs in components that might reference the journey
@@ -304,7 +304,7 @@ Example Flow:
                     if (component.props && component.props.href) {
                         const href = component.props.href;
                         if (href.includes('/apply') || href.includes('/start')) {
-                            const correctHref = `/${correctDeptSlug}/${correctJourneyId}/apply`;
+                            const correctHref = `/${correctDeptSlug}/${correctJourneySlug}/apply`;
                             if (href !== correctHref) {
                                 logger.warn(`Fixing component href: "${href}" → "${correctHref}"`);
                                 component.props.href = correctHref;
