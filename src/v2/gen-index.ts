@@ -209,11 +209,13 @@ Please create:
 - A unique ID (kebab-case, e.g., "apply-driving-licence")
 - A clear, professional name
 - A detailed description of what the service does
-- The appropriate government department (choose from existing: ${departmentList})
+- The appropriate government department
 - The service type (data-entry for applications/forms, data-lookup for checking info)
 - A URL-friendly slug
 
-Choose from these existing departments: ${departmentList}
+Available existing departments: ${departmentList}
+
+If none of the existing departments are suitable for this service, create a new appropriate department name that would realistically exist in UK government. Use official department names like "Companies House", "Department for Business and Trade", "HM Revenue & Customs", etc.
 
 Make this realistic and something that would actually exist as a government service.`;
 
@@ -222,7 +224,9 @@ Make this realistic and something that would actually exist as a government serv
         prompt,
         systemMessage: `You are an expert in UK government services. Generate complete, realistic journey metadata for government services that would benefit from online user journeys.
 
-Choose from the existing departments list provided. Create unique, professional IDs and names. Make descriptions clear and specific about what the service does.
+Choose from existing departments when they are suitable, but create new appropriate department names when none of the existing ones fit the service. Use realistic UK government department names like "Companies House", "Department for Business and Trade", "HM Revenue & Customs", "Department for Work and Pensions", etc.
+
+Create unique, professional IDs and names. Make descriptions clear and specific about what the service does.
 
 For service types:
 - data-entry: Services where users submit applications, forms, or new information
